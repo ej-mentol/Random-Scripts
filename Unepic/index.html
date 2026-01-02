@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unepic Toolkit v5.5</title>
+    <meta name="description" content="Tool for viewing Unepic sprite atlases and unlocking map files">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <style>
+        :root {
+            --bg-body: #0a0a0a; --bg-header: #161616; --bg-card: #1e1e1e;
+            --accent: #3b82f6; --text-main: #eee; --text-muted: #777;
+            --border: #222; --font: system-ui, -apple-system, sans-serif;
+        }
+        * { box-sizing: border-box; outline: none; }
+        body { margin: 0; background: var(--bg-body); color: var(--text-main); font-family: var(--font); font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        .header { height: 50px; background: var(--bg-header); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 20px; flex-shrink: 0; z-index: 100; }
+        .brand { font-weight: 700; font-size: 14px; letter-spacing: 1px; color: #fff; user-select: none; }
+        .brand span { color: var(--accent); }
+        .nav-pills { display: flex; background: #252525; padding: 3px; border-radius: 8px; gap: 2px; }
+        .nav-item { padding: 6px 14px; cursor: pointer; border-radius: 6px; color: var(--text-muted); font-weight: 600; transition: all 0.2s; font-size: 12px; user-select: none; }
+        .nav-item.active { background: #333; color: #fff; }
+        .nav-item:hover:not(.active) { color: #aaa; }
+        
+        .toolbar { display: flex; align-items: center; gap: 15px; flex: 1; margin-left: 10px; padding-left: 20px; border-left: 1px solid var(--border); }
+        .btn { background: var(--bg-card); color: #fff; border: 1px solid var(--border); padding: 7px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
+        .btn:hover:not(:disabled) { background: #2a2a2a; border-color: #444; }
+        .btn-primary { background: var(--accent); border-color: var(--accent); }
+        .btn-primary:hover:not(:disabled) { background: #2563eb; }
+        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .toggle-opt { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted); font-size: 11px; user-select: none; transition: color 0.2s; }
+        .toggle-opt:hover { color: #fff; }
+        .toggle-opt input { accent-color: var(--accent); margin: 0; cursor: pointer; }
+
+        .view-container { flex: 1; position: relative; display: none; overflow: hidden; }
+        .view-container.active { display: block; }
+        .gallery-wrap { height: 100%; overflow-y: auto; padding: 20px; }
+        .gallery-wrap::-webkit-scrollbar { width: 12px; }
+        .gallery-wrap::-webkit-scrollbar-track { background: #0a0a0a; }
+        .gallery-wrap::-webkit-scrollbar-thumb { background: #333; border-radius: 6px; }
+        .gallery-wrap::-webkit-scrollbar-thumb:hover { background: #444; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; padding-bottom: 100px; }
+        .card { background: var(--bg-card); border-radius: 4px; aspect-ratio: 1; position: relative; cursor: pointer; border: 1px solid transparent; overflow: hidden; transition: all 0.2s; }
+        .card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2); }
+        .card.selected { border-color: var(--accent); background: rgba(59, 130, 246, 0.1); }
+        .card.selected::after { content: '✓'; position: absolute; top: 5px; right: 5px; background: var(--accent); color: #fff; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        .card-img { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #111; }
+        .card img { max-width: 85%; max-height: 85%; image-rendering: pixelated; user-select: none; pointer-events: none; }
+        .card-lbl { position: absolute; bottom: 0; width: 100%; background: rgba(0,0,0,0.85); font-size: 9px; padding: 3px 6px; display: flex; justify-content: space-between; color: #aaa; user-select: none; }
+
+        .empty-state { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #333; border: 2px dashed #1a1a1a; border-radius: 12px; cursor: pointer; transition: all 0.3s; user-select: none; }
+        .empty-state:hover { border-color: #333; color: #555; background: rgba(255,255,255,0.01); }
+
+        #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; display: none; align-items: center; justify-content: center; }
+        #lightbox.active { display: flex; }
+
+        .lb-window { width: 90vw; height: 85vh; max-width: 1600px; background: #050505; border: 1px solid #333; border-radius: 12px; position: relative; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.8); z-index: 1010; }
+
+        .lb-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 50px; height: 80px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: rgba(255,255,255,0.2); font-size: 40px; transition: all 0.2s; z-index: 1020; user-select: none; }
+        .lb-arrow:hover { color: #fff; background: rgba(255,255,255,0.08); }
+        .lb-arrow-prev { left: 0; border-radius: 0 8px 8px 0; }
+        .lb-arrow-next { right: 0; border-radius: 8px 0 0 8px; }
+
+        .lb-header { height: 44px; background: #111; border-bottom: 1px solid #222; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; }
+        .lb-canvas-container { flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; position: relative; }
+        canvas { image-rendering: pixelated; cursor: grab; user-select: none; }
+        canvas:active { cursor: grabbing; }
+        .lb-footer { height: 28px; background: #111; border-top: 1px solid #222; display: flex; align-items: center; justify-content: center; font-family: 'Courier New', monospace; font-size: 11px; color: #555; gap: 20px; user-select: none; }
+        .lb-overlay-bg { position: absolute; inset: 0; cursor: zoom-out; z-index: 999; }
+
+        .unlocker-layout { max-width: 600px; margin: 50px auto; display: flex; flex-direction: column; gap: 20px; padding: 0 20px; }
+        .u-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 30px; }
+        .u-card h3 { margin: 0 0 20px 0; font-size: 16px; color: #fff; }
+        .opt-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #252525; align-items: center; }
+        .opt-item:last-of-type { border-bottom: none; }
+        .opt-item input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+        .log-box { background: #000; height: 180px; overflow-y: auto; padding: 12px; font-family: 'Courier New', monospace; font-size: 11px; border: 1px solid #222; border-radius: 8px; color: #666; line-height: 1.6; }
+        .log-box::-webkit-scrollbar { width: 8px; }
+        .log-box::-webkit-scrollbar-track { background: #000; }
+        .log-box::-webkit-scrollbar-thumb { background: #222; border-radius: 4px; }
+        .log-ok { color: #4ade80; } 
+        .log-err { color: #f87171; }
+
+        @media (max-width: 768px) {
+            .header { flex-wrap: wrap; height: auto; padding: 10px; }
+            .toolbar { margin-left: 0; padding-left: 0; border-left: none; width: 100%; justify-content: space-between; }
+            .lb-window { width: 95vw; height: 90vh; }
+            .grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="lightbox">
+    <div class="lb-overlay-bg" onclick="viewer.close()"></div>
+    <div class="lb-window">
+        <div class="lb-header">
+            <button class="btn" style="padding:4px 10px; font-size:12px;" onclick="viewer.close()">✕ Close</button>
+            <div id="zoomInd" style="color:#555; font-size:11px;">100%</div>
+            <button class="btn btn-primary" style="padding:4px 12px; font-size:12px;" onclick="viewer.saveCurrent()">Save PNG</button>
+        </div>
+        
+        <div class="lb-canvas-container">
+            <canvas id="canvas"></canvas>
+            <div class="lb-arrow lb-arrow-prev" onclick="viewer.prev()">‹</div>
+            <div class="lb-arrow lb-arrow-next" onclick="viewer.next()">›</div>
+        </div>
+
+        <div class="lb-footer" id="metaInfo">ID: <b>-</b></div>
+    </div>
+</div>
+
+<div class="header">
+    <div class="brand"><span>UNEPIC</span> TOOLKIT</div>
+    <div class="nav-pills">
+        <div class="nav-item active" id="tab-v" onclick="app.tab('viewer')" data-i18n="tabViewer">Viewer</div>
+        <div class="nav-item" id="tab-u" onclick="app.tab('unlocker')" data-i18n="tabUnlocker">Unlocker</div>
+    </div>
+
+    <div id="bar-viewer" class="toolbar">
+        <button class="btn btn-primary" onclick="document.getElementById('inputIDB').click()">
+            <span data-i18n="btnOpen">📂 Open IDB</span>
+        </button>
+        <button class="btn" id="btnSaveSelected" style="display:none;" onclick="viewer.saveSelectedZip()">
+            <span data-i18n="btnSaveZip">📦 Save ZIP (0)</span>
+        </button>
+        <input type="file" id="inputIDB" accept=".idb" style="display:none">
+        <div style="display:flex; gap:10px; margin-left:auto;">
+            <label class="toggle-opt"><input type="checkbox" id="chkBGR" checked> <span>BGR Fix</span></label>
+            <label class="toggle-opt"><input type="checkbox" id="chkChecker"> <span>Checker</span></label>
+            <label class="toggle-opt"><input type="checkbox" id="chkGrid"> <span>Grid</span></label>
+        </div>
+    </div>
+
+    <div id="bar-unlocker" class="toolbar" style="display:none;">
+        <button class="btn btn-primary" onclick="document.getElementById('inputMap').click()">
+            <span>📂 Select Maps</span>
+        </button>
+        <span id="mapCount" style="color:#555; font-size:12px;">No files selected</span>
+    </div>
+</div>
+
+<div id="view-viewer" class="view-container active">
+    <div class="gallery-wrap">
+        <div id="emptyState" class="empty-state" onclick="document.getElementById('inputIDB').click()">
+            <div style="font-size:48px; margin-bottom:15px; opacity:0.3;">📂</div>
+            <div data-i18n="dragDesc" style="font-weight:500; font-size:14px;">Drag & drop .IDB file here or Click to Open</div>
+        </div>
+        <div class="grid" id="spriteGrid"></div>
+    </div>
+</div>
+
+<div id="view-unlocker" class="view-container">
+    <div class="unlocker-layout">
+        <div class="u-card">
+            <h3 data-i18n="uTitle">Map Patching</h3>
+            <div class="opt-item"><span>Unlock Flag</span><input type="checkbox" checked disabled></div>
+            <div class="opt-item"><span data-i18n="uVer">Version 38 Fix</span><input type="checkbox" id="chkVer" checked></div>
+            <div class="opt-item"><span data-i18n="uId">Hybrid ID (3e91)</span><input type="checkbox" id="chkID" checked></div>
+            <div class="opt-item"><span data-i18n="uName">Inject Name (Risky)</span><input type="checkbox" id="chkName"></div>
+            <div class="opt-item"><span data-i18n="uTags">Repair Tags (Experimental)</span><input type="checkbox" id="chkTags"></div>
+            
+            <p style="color:#744; font-size:11px; margin-top:15px; line-height:1.4;" data-i18n="uWarn">
+                Warning: Injecting names or repairing tags may break external localization or corrupt the file structure. Use with caution.
+            </p>
+
+            <button class="btn btn-primary" id="btnUnlock" style="width:100%; justify-content:center; margin-top:15px; height:40px;" disabled onclick="unlocker.run()" data-i18n="uBtn">Process & Download ZIP</button>
+            <input type="file" id="inputMap" multiple accept=".map,.dat" style="display:none">
+        </div>
+        <div class="log-box" id="logBox"></div>
+    </div>
+</div>
+
+<script>
+    const I18N = {
+        en: { 
+            tabViewer: "Sprite Viewer", 
+            tabUnlocker: "Map Unlocker", 
+            btnOpen: "Open IDB", 
+            btnSaveZip: "Save Selected (ZIP)",
+            dragDesc: "Drag & drop .IDB file here or Click to Open",
+            uTitle: "Map Patching",
+            uVer: "Version 38 Fix",
+            uId: "Hybrid ID (3e91)",
+            uName: "Inject Name (Risky)",
+            uTags: "Repair Tags (Experimental)",
+            uBtn: "Process & Download ZIP",
+            uWarn: "Warning: Injecting names or repairing tags may break external localization or corrupt the file structure. Use with caution.",
+            uFiles: "files selected",
+            uNoFiles: "No files selected"
+        },
+        ru: { 
+            tabViewer: "Просмотр Спрайтов", 
+            tabUnlocker: "Разблокировщик", 
+            btnOpen: "Открыть IDB", 
+            btnSaveZip: "Сохранить (ZIP)",
+            dragDesc: "Перетащите .IDB файл или нажмите для выбора",
+            uTitle: "Патчинг Карт",
+            uVer: "Фикс версии 38",
+            uId: "Hybrid ID (3e91)",
+            uName: "Вставить имя (Рискованно)",
+            uTags: "Починка тегов (Экспериментально)",
+            uBtn: "Обработать и скачать ZIP",
+            uWarn: "Внимание: Вставка имен или починка тегов может нарушить внешнюю локализацию или структуру файла. Используйте на свой страх и риск.",
+            uFiles: "файлов выбрано",
+            uNoFiles: "Файлы не выбраны"
+        }
+    };
+    const T = I18N[(navigator.language && navigator.language.startsWith('ru')) ? 'ru' : 'en'];
+    
+    const updateUIStrings = () => {
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (T[key]) el.textContent = T[key];
+        });
+    };
+    updateUIStrings();
+
+    const app = {
+        tab: (id) => {
+            document.querySelectorAll('.view-container').forEach(e => e.classList.remove('active'));
+            document.getElementById('view-'+id).classList.add('active');
+            document.querySelectorAll('.nav-pills .nav-item').forEach(e => e.classList.remove('active'));
+            document.getElementById(id==='viewer'?'tab-v':'tab-u').classList.add('active');
+            document.getElementById('bar-viewer').style.display = id==='viewer' ? 'flex' : 'none';
+            document.getElementById('bar-unlocker').style.display = id==='unlocker' ? 'flex' : 'none';
+        }
+    };
+
+    const viewer = {
+        atlases: [], sprites: [], current: null, zoom: 4, pan: {x:0, y:0}, isDrag: false, lastPos: {x:0,y:0},
+        selected: new Set(),
+        init: function() {
+            this.canvas = document.getElementById('canvas'); 
+            this.ctx = this.canvas.getContext('2d', { alpha: false });
+            document.getElementById('inputIDB').onchange = e => this.load(e.target.files[0]);
+            
+            ['chkBGR','chkChecker','chkGrid'].forEach(id => 
+                document.getElementById(id).onchange = () => { 
+                    if(id!=='chkGrid') this.refreshGrid(); 
+                    if(this.current !== null) this.renderSingle(); 
+                }
+            );
+            
+            this.canvas.onmousedown = e => { 
+                this.isDrag = true; 
+                this.lastPos = {x:e.clientX, y:e.clientY}; 
+                e.stopPropagation(); 
+            };
+            window.onmouseup = () => this.isDrag = false;
+            window.onmousemove = e => { 
+                if(this.isDrag) { 
+                    this.pan.x += e.clientX - this.lastPos.x; 
+                    this.pan.y += e.clientY - this.lastPos.y; 
+                    this.lastPos = {x:e.clientX, y:e.clientY}; 
+                    this.renderSingle(); 
+                }
+            };
+            
+            document.getElementById('lightbox').onwheel = e => { 
+                e.preventDefault(); 
+                const factor = e.deltaY > 0 ? 0.9 : 1.1;
+                this.zoom = Math.max(0.5, Math.min(20, this.zoom * factor));
+                this.renderSingle(); 
+            };
+            
+            document.addEventListener('keydown', e => { 
+                if(this.current !== null) { 
+                    if(e.key === 'Escape') this.close(); 
+                    if(e.key === 'ArrowLeft') this.prev(); 
+                    if(e.key === 'ArrowRight') this.next(); 
+                }
+            });
+
+            const dropZone = document.getElementById('emptyState');
+            ['dragenter', 'dragover'].forEach(evt => {
+                dropZone.addEventListener(evt, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            });
+            
+            dropZone.addEventListener('drop', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files[0];
+                if(file && file.name.toLowerCase().endsWith('.idb')) {
+                    this.load(file);
+                }
+            });
+
+            document.querySelector('.gallery-wrap').onclick = (e) => {
+                if (!e.target.closest('.card')) {
+                    if (this.selected.size > 0) {
+                        this.selected.clear();
+                        this.refreshGrid();
+                        this.updateZipBtn();
+                    }
+                }
+            };
+        },
+        
+                        load: async function(file) {
+                            if(!file) return;
+                            document.getElementById('emptyState').style.display = 'none';
+                            this.atlases = []; 
+                            this.sprites = [];
+                            this.selected.clear();
+                            this.updateZipBtn();
+                            
+                            try {                        const buf = await file.arrayBuffer();
+                        const view = new DataView(buf);
+                        const u8 = new Uint8Array(buf);
+                        let off = 0;
+                        
+                        while(off < buf.byteLength - 32) {
+                            if(view.getUint32(off) === 0x54455843) {
+                                if(off + 32 > buf.byteLength) break;
+                                const w = view.getUint32(off+12, true);
+                                const h = view.getUint32(off+16, true);
+                                const sz = view.getUint32(off+28, true);
+                                if(sz > 0 && off + 32 + sz <= buf.byteLength && w > 0 && h > 0) {
+                                    try { 
+                                        const inflated = pako.inflate(u8.slice(off+32, off+32+sz));
+                                        if(inflated.length === w * h * 4) {
+                                            this.atlases.push(await createImageBitmap(new ImageData(new Uint8ClampedArray(inflated), w, h)));
+                                        }
+                                    } catch(e) { console.error("Atlas inflate error:", e); }
+                                }
+                                off += 32 + sz;
+                            } else off++;
+                        }
+                        
+                        const imgOffs = [];
+                        for(let i = 0; i <= buf.byteLength - 40; i++) {
+                            if(view.getUint32(i) === 0x494D4720) imgOffs.push(i);
+                        }
+                        
+                        const validPtrs = imgOffs.filter(o => o + 8 <= buf.byteLength).map(o => {
+                            try { return view.getUint32(o+4, true); } catch { return null; }
+                        }).filter(p => p !== null);
+                        const ptrs = [...new Set(validPtrs)].sort((a,b) => a-b);
+                        
+                        for(let o of imgOffs) {
+                            if(o + 40 > buf.byteLength) continue;
+                            let ptr, x1, y1, x2, y2;
+                            try {
+                                ptr = view.getUint32(o+4, true);
+                                x1 = view.getInt32(o+24, true);
+                                y1 = view.getInt32(o+28, true);
+                                x2 = view.getInt32(o+32, true);
+                                y2 = view.getInt32(o+36, true);
+                            } catch { continue; }
+                            
+                            if(x1 > -2000 && x1 < 4000 && x2 > x1 && y2 > y1 && x2 - x1 < 2000 && y2 - y1 < 2000) {
+                                const idx = this.sprites.length;
+                                const a_idx = Math.max(0, ptrs.indexOf(ptr));
+                                if(a_idx < this.atlases.length) {
+                                    let extra = new Uint8Array(16);
+                                    const len = Math.min(16, buf.byteLength - (o + 8));
+                                    if(len > 0) {
+                                        try { extra.set(u8.slice(o+8, o+8+len)); } catch {}
+                                    }
+                                    this.sprites.push({ 
+                                        id: idx, a_idx, x1, y1, x2, y2, 
+                                        w: x2-x1, h: y2-y1, ptr, extra
+                                    });
+                                }
+                            }
+                        }
+                        this.refreshGrid();
+                    } catch(e) {
+                        console.error("IDB Load Error:", e);
+                        alert("Error loading IDB: " + e.message);
+                    }
+                },        
+        refreshGrid: function() {
+            const grid = document.getElementById('spriteGrid'); 
+            grid.innerHTML = '';
+            const bgr = document.getElementById('chkBGR').checked;
+            let rendered = 0;
+            
+            const chunk = () => {
+                const limit = Math.min(rendered + 50, this.sprites.length);
+                const frag = document.createDocumentFragment();
+                const tc = document.createElement('canvas');
+                const tcx = tc.getContext('2d', { alpha: true });
+                
+                for(let i = rendered; i < limit; i++) {
+                    const s = this.sprites[i];
+                    const a = this.atlases[s.a_idx];
+                    
+                    tc.width = s.w; 
+                    tc.height = s.h;
+                    tcx.clearRect(0, 0, s.w, s.h);
+                    tcx.drawImage(a, s.x1, s.y1, s.w, s.h, 0, 0, s.w, s.h);
+                    
+                    if(bgr) {
+                        const d = tcx.getImageData(0, 0, s.w, s.h);
+                        for(let p = 0; p < d.data.length; p += 4) {
+                            const t = d.data[p]; 
+                            d.data[p] = d.data[p+2]; 
+                            d.data[p+2] = t;
+                        }
+                        tcx.putImageData(d, 0, 0);
+                    }
+                    
+                    const card = document.createElement('div'); 
+                    card.className = 'card' + (this.selected.has(i) ? ' selected' : ''); 
+                    card.onclick = (e) => {
+                        if (e.ctrlKey || e.metaKey) {
+                            if (this.selected.has(i)) this.selected.delete(i);
+                            else this.selected.add(i);
+                            card.classList.toggle('selected');
+                            this.updateZipBtn();
+                        } else {
+                            this.open(i);
+                        }
+                    };
+                    
+                    const img = document.createElement('img'); 
+                    img.src = tc.toDataURL();
+                    const div = document.createElement('div'); 
+                    div.className = 'card-img'; 
+                    div.appendChild(img);
+                    
+                    const lbl = document.createElement('div'); 
+                    lbl.className = 'card-lbl';
+                    lbl.innerHTML = `<span>#${s.id}</span><span>${s.w}×${s.h}</span>`;
+                    
+                    card.append(div, lbl); 
+                    frag.appendChild(card);
+                }
+                
+                grid.appendChild(frag); 
+                rendered = limit;
+                if(rendered < this.sprites.length) requestAnimationFrame(chunk);
+            };
+            chunk();
+        },
+        
+        updateZipBtn: function() {
+            const btn = document.getElementById('btnSaveSelected');
+            if (this.selected.size > 0) {
+                btn.style.display = 'flex';
+                btn.querySelector('span').textContent = `${T.btnSaveZip} (${this.selected.size})`;
+            } else {
+                btn.style.display = 'none';
+            }
+        },
+
+        saveSelectedZip: async function() {
+            if (this.selected.size === 0) return;
+            const zip = new JSZip();
+            const bgr = document.getElementById('chkBGR').checked;
+            
+            const tc = document.createElement('canvas');
+            const tcx = tc.getContext('2d', { alpha: true });
+            
+            for (let idx of this.selected) {
+                const s = this.sprites[idx];
+                const a = this.atlases[s.a_idx];
+                tc.width = s.w; 
+                tc.height = s.h;
+                tcx.clearRect(0, 0, s.w, s.h);
+                tcx.drawImage(a, s.x1, s.y1, s.w, s.h, 0, 0, s.w, s.h);
+                
+                if (bgr) {
+                    const d = tcx.getImageData(0, 0, s.w, s.h);
+                    for (let p = 0; p < d.data.length; p += 4) {
+                        const t = d.data[p]; 
+                        d.data[p] = d.data[p+2]; 
+                        d.data[p+2] = t;
+                    }
+                    tcx.putImageData(d, 0, 0);
+                }
+                
+                const blob = await new Promise(res => tc.toBlob(res, 'image/png'));
+                zip.file(`sprite_${s.id}.png`, blob);
+            }
+            
+            const content = await zip.generateAsync({type: "blob"});
+            const l = document.createElement('a');
+            l.href = URL.createObjectURL(content);
+            l.download = `sprites_export.zip`;
+            l.click();
+        },
+
+        open: function(idx) { 
+            this.current = idx; 
+            document.getElementById('lightbox').classList.add('active'); 
+            const area = document.querySelector('.lb-canvas-container'); 
+            this.canvas.width = area.clientWidth; 
+            this.canvas.height = area.clientHeight; 
+            this.zoom = 4; 
+            this.pan = {x:0, y:0}; 
+            this.renderSingle(); 
+        },
+        
+        close: function() { 
+            document.getElementById('lightbox').classList.remove('active'); 
+            this.current = null; 
+        },
+        
+        next: function() { 
+            if(this.current < this.sprites.length - 1) this.open(this.current + 1); 
+        },
+        
+        prev: function() { 
+            if(this.current > 0) this.open(this.current - 1); 
+        },
+        
+        renderSingle: function() {
+            if(this.current === null) return;
+            
+            const s = this.sprites[this.current];
+            const a = this.atlases[s.a_idx];
+            const chk = document.getElementById('chkChecker').checked;
+            
+            this.ctx.imageSmoothingEnabled = false;
+            this.ctx.fillStyle = '#050505';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            if(chk) {
+                const sz = 20;
+                this.ctx.fillStyle = '#161616';
+                for(let y = 0; y < this.canvas.height; y += sz) {
+                    for(let x = 0; x < this.canvas.width; x += sz) {
+                        if((Math.floor(x/sz) + Math.floor(y/sz)) % 2 === 0) {
+                            this.ctx.fillRect(x, y, sz, sz);
+                        }
+                    }
+                }
+            }
+            
+            const dw = s.w * this.zoom;
+            const dh = s.h * this.zoom;
+            const dx = (this.canvas.width / 2) + this.pan.x - dw / 2;
+            const dy = (this.canvas.height / 2) + this.pan.y - dh / 2;
+            
+            const tc = document.createElement('canvas');
+            tc.width = s.w; 
+            tc.height = s.h;
+            const tcx = tc.getContext('2d', { alpha: true });
+            tcx.drawImage(a, s.x1, s.y1, s.w, s.h, 0, 0, s.w, s.h);
+            
+            if(document.getElementById('chkBGR').checked) {
+                const d = tcx.getImageData(0, 0, s.w, s.h);
+                for(let p = 0; p < d.data.length; p += 4) {
+                    const t = d.data[p]; 
+                    d.data[p] = d.data[p+2]; 
+                    d.data[p+2] = t;
+                }
+                tcx.putImageData(d, 0, 0);
+            }
+            
+            this.ctx.drawImage(tc, dx, dy, dw, dh);
+            this.ctx.strokeStyle = '#444';
+            this.ctx.strokeRect(dx, dy, dw, dh);
+            
+            if(document.getElementById('chkGrid').checked && this.zoom >= 4) {
+                this.ctx.beginPath();
+                this.ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                for(let x = 0; x <= s.w; x++) {
+                    this.ctx.moveTo(dx + x * this.zoom, dy);
+                    this.ctx.lineTo(dx + x * this.zoom, dy + dh);
+                }
+                for(let y = 0; y <= s.h; y++) {
+                    this.ctx.moveTo(dx, dy + y * this.zoom);
+                    this.ctx.lineTo(dx + dw, dy + y * this.zoom);
+                }
+                this.ctx.stroke();
+            }
+            
+            document.getElementById('zoomInd').textContent = Math.round(this.zoom * 100) + "%";
+            
+            let hex = "";
+            for(let b of s.extra) hex += b.toString(16).padStart(2,'0') + " ";
+            
+            document.getElementById('metaInfo').innerHTML = 
+                `ID: <b>${s.id}</b> | <b>${s.w}×${s.h}</b> | Atlas: <b>${s.a_idx}</b> | Ptr: <b>0x${s.ptr.toString(16)}</b> | Extra: <b>${hex.trim()}</b>`;
+        },
+        
+        saveCurrent: function() {
+            if(this.current === null) return;
+            
+            const s = this.sprites[this.current];
+            const a = this.atlases[s.a_idx];
+            const tc = document.createElement('canvas');
+            tc.width = s.w; 
+            tc.height = s.h;
+            const tcx = tc.getContext('2d', { alpha: true });
+            tcx.drawImage(a, s.x1, s.y1, s.w, s.h, 0, 0, s.w, s.h);
+            
+            if(document.getElementById('chkBGR').checked) {
+                const d = tcx.getImageData(0, 0, s.w, s.h);
+                for(let p = 0; p < d.data.length; p += 4) {
+                    const t = d.data[p]; 
+                    d.data[p] = d.data[p+2]; 
+                    d.data[p+2] = t;
+                }
+                tcx.putImageData(d, 0, 0);
+            }
+            
+            tc.toBlob(b => {
+                const l = document.createElement('a');
+                l.href = URL.createObjectURL(b);
+                l.download = `sprite_${s.id}.png`;
+                l.click();
+            });
+        }
+    };
+    
+    const unlocker = {
+        files: [],
+        init: function() {
+            document.getElementById('inputMap').onchange = e => {
+                this.files = Array.from(e.target.files);
+                document.getElementById('btnUnlock').disabled = !this.files.length;
+                const countLbl = document.getElementById('mapCount');
+                if (this.files.length) {
+                    countLbl.textContent = this.files.length + " " + T.uFiles;
+                } else {
+                    countLbl.textContent = T.uNoFiles;
+                }
+            };
+        },
+        
+        run: async function() {
+            const zip = new JSZip();
+            const opt = {
+                ver: document.getElementById('chkVer').checked,
+                id: document.getElementById('chkID').checked,
+                name: document.getElementById('chkName').checked,
+                tags: document.getElementById('chkTags').checked
+            };
+            
+            for(let f of this.files) {
+                try {
+                    const buf = await f.arrayBuffer();
+                    const u8_raw = new Uint8Array(buf);
+                    const key = u8_raw.slice(u8_raw.length - 8, u8_raw.length - 4);
+                    const pay = u8_raw.slice(0, u8_raw.length - 8);
+                    
+                    let acc = 0;
+                    for(let i = 0; i < pay.length; i++) {
+                        let k = key[i % 4];
+                        let sk = (k < 128) ? k : k - 256;
+                        acc = (acc + sk) | 0;
+                        pay[i] = (pay[i] - acc);
+                    }
+                    
+                    let zOff = -1;
+                    for(let i = 0; i < pay.length - 1; i++) {
+                        if(pay[i] === 0x78 && (pay[i+1] === 0xDA || pay[i+1] === 0x9C)) {
+                            zOff = i;
+                            break;
+                        }
+                    }
+                    if (zOff === -1) throw new Error("Zlib stream not found");
+                    
+                    let data = pako.inflate(pay.slice(zOff));
+                    data[8] = 0; // Basic Unlock (Flag 0)
+                    
+                    if(opt.ver) {
+                        data[4] = 0x26;
+                        data[5] = 0;
+                        data[6] = 0;
+                        data[7] = 0;
+                    }
+                    
+                    if(opt.id) {
+                        data[10] = 0x3e;
+                        data[11] = 0x91;
+                    }
+
+                    if (opt.name && data[19] === 0) {
+                        const nameStr = f.name.replace(/\.(map|dat)$/i, '');
+                        const nameBytes = new Uint8Array(nameStr.length * 2 + 2);
+                        for (let i = 0; i < nameStr.length; i++) {
+                            const code = nameStr.charCodeAt(i);
+                            nameBytes[i*2] = code & 0xff;
+                            nameBytes[i*2+1] = (code >> 8) & 0xff;
+                        }
+                        let newData = new Uint8Array(data.length + nameBytes.length);
+                        newData.set(data.subarray(0, 19), 0);
+                        newData.set(nameBytes, 19);
+                        newData.set(data.subarray(19), 19 + nameBytes.length);
+                        data = newData;
+                    }
+
+                    if (opt.tags) {
+                        const tags = [ [0x44,0x45,0x43,0x54], [0x43,0x44,0x4c,0x47] ]; // DECT, CDLG
+                        const verTag = [0x26, 0, 0, 0];
+                        for (let tag of tags) {
+                            for (let i = 0; i <= data.length - tag.length; i++) {
+                                let match = true;
+                                for (let j = 0; j < tag.length; j++) if (data[i+j] !== tag[j]) { match = false; break; }
+                                if (match) {
+                                    if (i >= 4) {
+                                        let preMatch = true;
+                                        for (let j = 0; j < 4; j++) if (data[i-4+j] !== verTag[j]) { preMatch = false; break; }
+                                        if (!preMatch) {
+                                            let newData = new Uint8Array(data.length + 4);
+                                            newData.set(data.subarray(0, i), 0);
+                                            newData.set(verTag, i);
+                                            newData.set(data.subarray(i), i + 4);
+                                            data = newData;
+                                            i += 4; 
+                                        }
+                                    }
+                                    break; 
+                                }
+                            }
+                        }
+                    }
+                    
+                    let sum = 0;
+                    for(let i = 0; i < data.length - 6; i++) {
+                        sum = (sum + data[i]) >>> 0;
+                    }
+                    
+                    if(data.length >= 4) {
+                        new DataView(data.buffer, data.byteOffset, data.byteLength)
+                            .setUint32(data.length - 4, (Math.imul(sum, 7)) >>> 0, true);
+                    } else {
+                        throw new Error("Inflated data too short");
+                    }
+                    
+                    const recomp = pako.deflate(data);
+                    const head = new Uint8Array(11);
+                    const hv = new DataView(head.buffer);
+                    hv.setUint8(0, 100);
+                    hv.setUint32(1, data.length, true);
+                    hv.setUint8(5, 101);
+                    hv.setUint32(6, recomp.length, true);
+                    hv.setUint8(10, 102);
+                    
+                    const pkt = new Uint8Array(head.length + recomp.length + 1);
+                    pkt.set(head, 0);
+                    pkt.set(recomp, head.length);
+                    pkt[pkt.length - 1] = 0x67;
+                    
+                    acc = 0;
+                    const enc = new Uint8Array(pkt.length);
+                    for(let i = 0; i < pkt.length; i++) {
+                        let k = key[i % 4];
+                        let sk = (k < 128) ? k : k - 256;
+                        acc = (acc + sk) | 0;
+                        enc[i] = (pkt[i] + acc);
+                    }
+                    
+                    const fin = new Uint8Array(enc.length + 8);
+                    fin.set(enc, 0);
+                    fin.set(key, enc.length);
+                    fin.set([65, 69, 70, 49], enc.length + 4);
+                    
+                    zip.file("mod_" + f.name.replace(/\.dat$/i, '.map'), fin);
+                    this.log("✓ " + f.name, 'ok');
+                } catch(e) {
+                    this.log("✗ " + f.name + " - " + e.message, 'err');
+                    console.error(e);
+                }
+            }
+            
+            const b = await zip.generateAsync({type: "blob"});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(b);
+            a.download = "maps.zip";
+            a.click();
+        },
+        
+        log: function(m, t = '') {
+            const b = document.getElementById('logBox');
+            const d = document.createElement('div');
+            d.className = t === 'err' ? 'log-err' : t === 'ok' ? 'log-ok' : '';
+            d.textContent = m;
+            b.appendChild(d);
+            b.scrollTop = b.scrollHeight;
+        }
+    };
+    
+    viewer.init();
+    unlocker.init();
+    app.tab('viewer');
+</script>
+</body>
+</html>
