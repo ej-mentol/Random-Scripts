@@ -1,0 +1,144 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TDR_PAK_Manager_CS"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="700"
+        x:Class="TDR_PAK_Manager_CS.MainWindow"
+        Title="TDR2000 Archive Manager"
+        Background="#181818"
+        Foreground="#e0e0e0"
+        x:DataType="local:MainWindow">
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#2d2d2d"/>
+            <Setter Property="BorderBrush" Value="#3f3f3f"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="Button:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="0.3"/>
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3d3d3d"/>
+            <Setter Property="BorderBrush" Value="#0078d4"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#1e1e1e"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="TreeView">
+            <Setter Property="Background" Value="#1e1e1e"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="TreeViewItem">
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" x:DataType="local:MainWindow+Node"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <!-- Menu -->
+        <Menu DockPanel.Dock="Top" Background="#181818" BorderThickness="0,0,0,1" BorderBrush="#333333">
+            <MenuItem Header="_File">
+                <MenuItem Header="_New Archive..." Click="OnNewArchiveClick"/>
+                <Separator/>
+                <MenuItem Header="_Exit" Click="OnExitClick"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Status Bar -->
+        <Border DockPanel.Dock="Bottom" Background="#0078d4" Height="30">
+            <Grid ColumnDefinitions="*, Auto">
+                <TextBlock x:Name="StatusText" Text="Ready" VerticalAlignment="Center" Margin="10,0" FontSize="11" Foreground="White" FontWeight="SemiBold"/>
+                <ProgressBar Grid.Column="1" x:Name="OpProgressBar" Width="200" Height="4" Margin="0,0,10,0" 
+                             Minimum="0" Maximum="100" IsIndeterminate="False" Foreground="White" Background="#33ffffff"
+                             IsVisible="False"/>
+            </Grid>
+        </Border>
+
+        <!-- Top Toolbars -->
+        <Grid x:Name="TopToolbar" DockPanel.Dock="Top" ColumnDefinitions="*, 150, *" Margin="10,10">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="SOURCE" VerticalAlignment="Center" Width="60" FontSize="10" FontWeight="Bold" Foreground="#888888"/>
+                <TextBox x:Name="SourcePathBox" Width="300" IsReadOnly="True" VerticalContentAlignment="Center"/>
+                <Button Content="..." Click="OnBrowseSourceClick" ToolTip.Tip="Browse Folder"/>
+                <Button Content="🔄" Click="OnRefreshSourceClick" ToolTip.Tip="Refresh"/>
+                <Button Content="📂" Click="OnOpenSourceClick" ToolTip.Tip="Open in Explorer"/>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="TARGET" VerticalAlignment="Center" Width="60" FontSize="10" FontWeight="Bold" Foreground="#888888"/>
+                <TextBox x:Name="TargetPathBox" Width="300" IsReadOnly="True" VerticalContentAlignment="Center"/>
+                <Button Content="..." Click="OnBrowseTargetClick" ToolTip.Tip="Browse Folder"/>
+                <Button Content="🔄" Click="OnRefreshTargetClick" ToolTip.Tip="Refresh"/>
+                <Button Content="📂" Click="OnOpenTargetClick" ToolTip.Tip="Open in Explorer"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Main Workspace -->
+        <Grid ColumnDefinitions="*, 150, *" Margin="10,0,10,10">
+            <!-- Left: Source Tree -->
+            <Border Grid.Column="0" BorderThickness="1" BorderBrush="#333333" CornerRadius="6" ClipToBounds="True">
+                <TreeView x:Name="SourceTree" KeyDown="OnSourceTreeKeyDown" SelectionMode="Multiple">
+                    <TreeView.ItemTemplate>
+                        <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="local:MainWindow+Node">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <StackPanel.ContextMenu>
+                                    <ContextMenu x:Name="SourceContextMenu">
+                                        <MenuItem Header="Extract (F5)" Click="OnExtractClick"/>
+                                        <MenuItem Header="Delete from Index (Del)" Click="OnDeleteFromIndexClick"/>
+                                        <Separator/>
+                                        <MenuItem Header="Clean Archive (Rebuild)" Click="OnRebuildArchiveClick"/>
+                                    </ContextMenu>
+                                </StackPanel.ContextMenu>
+                                <TextBlock Text="{Binding Icon}" Foreground="{Binding IconColor}" FontSize="16"/>
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </Border>
+
+            <!-- Middle: Actions -->
+            <StackPanel x:Name="ActionPanel" Grid.Column="1" VerticalAlignment="Center" Spacing="12" Margin="15,0">
+                <Button x:Name="ExtractButton" Content="Extract →" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="OnExtractClick" FontWeight="Bold" Height="40" VerticalContentAlignment="Center" Background="#0078d4" Foreground="White" IsEnabled="False"/>
+                <Button x:Name="PackButton" Content="← Pack" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="OnPackClick" Height="40" VerticalContentAlignment="Center" IsEnabled="False"/>
+                
+                <Rectangle Height="1" Fill="#333333" Margin="0,10"/>
+                
+                <Button x:Name="CleanButton" Content="Clean Up" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="OnRebuildArchiveClick" ToolTip.Tip="Optimize PAK file" IsEnabled="False"/>
+                <Button x:Name="MirrorButton" Content="Full Mirror" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="OnMirrorClick"/>
+                
+                <StackPanel Spacing="5" Margin="0,15,0,0">
+                    <CheckBox x:Name="LooseFilesCheck" Content="Loose files" IsChecked="True" FontSize="11"/>
+                    <CheckBox x:Name="FlattenCheck" Content="Flatten" FontSize="11"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Right: Target Tree -->
+            <Border Grid.Column="2" BorderThickness="1" BorderBrush="#333333" CornerRadius="6" ClipToBounds="True">
+                <TreeView x:Name="TargetTree" KeyDown="OnTargetTreeKeyDown" SelectionMode="Multiple">
+                    <TreeView.ItemTemplate>
+                        <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="local:MainWindow+Node">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <StackPanel.ContextMenu>
+                                    <ContextMenu x:Name="TargetContextMenu">
+                                        <MenuItem Header="Pack Into Archive (F5)" Click="OnPackClick"/>
+                                        <MenuItem Header="Delete Physical (Del)" Click="OnDeletePhysicalClick"/>
+                                    </ContextMenu>
+                                </StackPanel.ContextMenu>
+                                <TextBlock Text="{Binding Icon}" Foreground="{Binding IconColor}" FontSize="16"/>
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>
