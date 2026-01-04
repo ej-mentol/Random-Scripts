@@ -63,3 +63,7 @@ Export a specific geometry file.
 
 ## Requirements
 To get textures in your 3D software, make sure the `.tga` files are present in the search path or extracted folder. The exporter will link them relatively in the `.mtl` file.
+
+ ### Credits
+  - Format Parsers (`.HIE`, `.MSHS`, `.H`): Based on the logic from the ToxicRagers
+  (https://github.com/MaxxWyndham/ToxicRagers) project, significantly refactored for .NET 9 and modern 3D workflows.
