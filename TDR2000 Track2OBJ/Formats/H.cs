@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -31,7 +31,10 @@ namespace TdrExport.TDR2000.Formats
                 {
                     string[] parts = lines[i].Split(" ".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
 
-                    h.Definitions.Add(int.Parse(parts[2]), parts[1]);
+                    if (parts.Length >= 3)
+                    {
+                        h.Definitions.Add(int.Parse(parts[2]), parts[1]);
+                    }
                 }
             }
 
