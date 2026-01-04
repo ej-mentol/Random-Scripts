@@ -1,69 +1,43 @@
-# Track2Obj: Carmageddon: TDR 2000 (created by me and AI)
+# Track2Obj: Carmageddon TDR 2000 Universal Tool
 
-A standalone CLI utility for **Carmageddon TDR2000** asset management. It allows you to investigate level structures, unpack game archives, and export complete game levels into **Wavefront OBJ + MTL** format for Blender, 3ds Max, or modern game engines.
+This is a standalone command-line interface (CLI) utility for **Carmageddon TDR2000** asset management. It enables you to examine level structures, unpack game archives, and export entire game levels in **Wavefront OBJ + MTL** format.
 
 ## Features
-- **Virtual File System (VFS):** Automatically reads assets directly from `.pak` archives using `.dir` indices. No need to manualy unpack the whole game.
-- **Smart Level Export (`-l`):** Parses master level descriptors and exports all layers (Static geometry, Breakables, Props, Water, Sky) in one go.
-- **Movable Objects Support:** Automatically places thousands of dynamic props (cactuses, trees, debris) in their correct world coordinates.
-- **High-Quality Textures:** Automatically selects 32-bit (`_32.tga`) and high-resolution versions of textures.
-- **Atomic Writes:** Uses temporary files and cleanups to prevent corrupted outputs if an export is interrupted.
-- **Cycle Protection:** Safe recursive parsing of nested descriptors.
+- **Virtual File System (VFS):** Transparently reads assets directly from `.pak` archives using `.dir` indices. You can export a level pointing only to the original game's `ASSETS` folder.
+- **Recursive Dependency Tracing:** Automatically follows chains of descriptors (TXT -> TXT -> HIE) to find every piece of the level.
+- **Smart Level Export (`-l`):** Exports all layers (Static geometry, Breakables, Props, Water, Sky) in one pass with unique naming to avoid file conflicts.
+- **Automatic World Positioning:** Processes `MOVABLE_OBJECTS` to place thousands of props (cactuses, cars, etc.) at their exact game coordinates.
+- **High-Quality Asset Selection:** Prioritizes 32-bit textures (`_32.tga`) and highest available resolutions.
+- **Blender Ready:** Automatic V-axis flipping for UVs and transparency support (`map_d` in MTL).
+- **Atomic Operations:** Safe writing using temporary files and crash cleanup.
 
 ---
 
 ## Usage
 
-### 1. Full Level Export (`-l`)
-This is the main "Smart" mode. 
-**Command:** `TdrExport -l <path_to_level.txt> <game_assets_root>`
-
-**What it does:**
-1. Parses the main level file (e.g., `hollowood.txt`).
-2. Identifies all sub-descriptors (Mesh, Breakables, Props).
-3. Recursively finds all `.hie` hierarchy files referenced in the level.
-4. Exports every component into separate, uniquely named `.obj` files.
-5. Processes `MOVABLE_OBJECTS` to generate a combined `_movables.obj` containing all placed props.
-6. Prints Environment Data (Sun vector, Light colors, Fog settings) to the console for your 3D scene setup.
-
-**Example:**
-`TdrExport -l "Tracks\Hollowood\Hollowood.txt" "C:\Games\TDR2000\ASSETS"`
-
----
-
-### 2. Investigation Mode (`-i`)
-Use this to "scout" a level before exporting.
+### 1. Investigation & Scouting (`-i`)
+Scans a level and reports all dependencies, identifying what's found and what's missing.
 **Command:** `TdrExport -i <level.txt> <game_assets_root>`
+*Note: <level.txt> can be just a filename; the tool will find it inside the PAKs.*
 
-**What it does:**
-- Traces all dependencies (nested TXT and HIE files).
-- Checks if every file exists on disk or inside PAK archives.
-- **Validates Textures:** Lists every texture used by the level and marks missing ones with `[!]`.
-- Prints a structured report of the "puzzle pieces" required for the level.
+### 2. Full Level Export (`-l`)
+The "one-click" mode to get the whole map.
+**Command:** `TdrExport -l <level.txt> <game_assets_root>`
 
----
-
-### 3. Unpacker Mode (`-u`)
-Extracts all files from game archives.
+### 3. Archive Unpacker (`-u`)
+Extracts all files from all PAKs in a directory.
 **Command:** `TdrExport -u <archives_folder> <output_folder>`
 
----
-
 ### 4. Single File Export
-Export a specific geometry file.
 **Command:** `TdrExport <file.hie> [game_assets_root]`
 
 ---
 
 ## Technical Details
-- **Target:** .NET 9.0 (Windows)
-- **Output:** Wavefront OBJ (Geometry), MTL (Materials).
-- **Texture Logic:** Automatically flips V-coordinate for OBJ compatibility and adds `map_d` for transparency support in 32-bit TGA files.
-- **Conflict Resolution:** OBJ filenames are generated using their relative paths to prevent overwriting files with identical names (like `wall.hie`) from different folders.
+- **Target Platform:** .NET 9.0 (Windows)
+- **Output Formats:** Wavefront OBJ, MTL.
+- **Texture Support:** Links directly to `.tga` files. Supports alpha transparency for windows and foliage.
 
-## Requirements
-To get textures in your 3D software, make sure the `.tga` files are present in the search path or extracted folder. The exporter will link them relatively in the `.mtl` file.
-
- ### Credits
-  - Format Parsers (`.HIE`, `.MSHS`, `.H`): Based on the logic from the ToxicRagers
-  (https://github.com/MaxxWyndham/ToxicRagers) project, significantly refactored for .NET 9 and modern 3D workflows.
+## Credits
+- **Archive Engine (`.PAK` / `.DIR`):** Custom high-performance implementation by the project owner, featuring full Trie-index support and zIG/RAW block decompression.
+- **Format Parsers (`.HIE`, `.MSHS`, `.H`):** Based on the logic from the [ToxicRagers](https://github.com/MaxxWyndham/ToxicRagers) project, significantly refactored and modernized.
