@@ -1,4 +1,4 @@
-# Track2Obj: Carmageddon TDR2000 (by me and ai)
+# Track2Obj: Carmageddon: TDR 2000 (created by me and AI)
 
 A standalone CLI utility for **Carmageddon TDR2000** asset management. It allows you to investigate level structures, unpack game archives, and export complete game levels into **Wavefront OBJ + MTL** format for Blender, 3ds Max, or modern game engines.
 
