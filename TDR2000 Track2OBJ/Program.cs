@@ -12,58 +12,87 @@ namespace TdrExport
     class Program
     {
         static PakManager VFS = new PakManager();
+        static string ExportDir = "EXPORT";
 
         static void Main(string[] args)
         {
             if (args.Length == 0)
             {
-                Console.WriteLine("Carmageddon TDR2000 Universal Tool (Track2Obj & Unpacker)");
-                Console.WriteLine("Usage:");
-                Console.WriteLine("  Full Level Export: TdrExport -l <level.txt> <search_root>");
-                Console.WriteLine("  Export Movables:   TdrExport -m <descriptor.txt> <assets_root>");
-                Console.WriteLine("  Investigate:       TdrExport -i <level.txt> <search_root>");
-                Console.WriteLine("  Unpack Archives:   TdrExport -u <archives_root> <output_dir>");
-                Console.WriteLine("  Single HIE:        TdrExport <file.hie> [assets_root]");
+                PrintUsage();
                 return;
             }
 
-            if (args[0] == "-u" || args[0] == "--unpack")
+            string levelPath = null;
+            string assetsRoot = null;
+            
+            for (int i = 0; i < args.Length; i++)
             {
-                if (args.Length < 3) { Console.WriteLine("Usage: TdrExport -u <archives_root> <output_dir>"); return; }
-                UnpackAll(args[1], args[2]);
-                return;
+                if ((args[i] == "-l" || args[i] == "--level") && i + 2 < args.Length)
+                {
+                    levelPath = args[i + 1];
+                    assetsRoot = args[i + 2];
+                    i += 2;
+                }
+                else if ((args[i] == "-o" || args[i] == "--out") && i + 1 < args.Length)
+                {
+                    ExportDir = args[i + 1];
+                    i++;
+                }
+                else if ((args[i] == "-i" || args[i] == "--info") && i + 2 < args.Length)
+                {
+                    VFS.IndexDirectory(args[i + 2]);
+                    InvestigateLevel(args[i + 1], args[i + 2]);
+                    return;
+                }
+                else if ((args[i] == "-m" || args[i] == "--movables") && i + 2 < args.Length)
+                {
+                    VFS.IndexDirectory(args[i + 2]);
+                    ConvertMovablesToObj(args[i + 1], args[i + 2]);
+                    return;
+                }
+                else if ((args[i] == "-u" || args[i] == "--unpack") && i + 2 < args.Length)
+                {
+                    UnpackAll(args[i + 1], args[i + 2]);
+                    return;
+                }
             }
 
-            string searchRoot = args.Length > 1 ? args[args.Length - 1] : ".";
-            if (Directory.Exists(searchRoot)) VFS.IndexDirectory(searchRoot);
-
-            if (args[0] == "-i" || args[0] == "--info")
+            if (levelPath != null && assetsRoot != null)
             {
-                if (args.Length < 3) { Console.WriteLine("Usage: TdrExport -i <level.txt> <search_root>"); return; }
-                InvestigateLevel(args[1], searchRoot);
+                Directory.CreateDirectory(ExportDir);
+                Console.WriteLine($"Output directory: {Path.GetFullPath(ExportDir)}");
+                VFS.IndexDirectory(assetsRoot);
+                ConvertLevel(levelPath, assetsRoot);
             }
-            else if (args[0] == "-l" || args[0] == "--level")
+            else if (args.Length == 1 && (File.Exists(args[0]) || args[0].EndsWith(".hie")))
             {
-                if (args.Length < 3) { Console.WriteLine("Usage: TdrExport -l <level.txt> <search_root>"); return; }
-                ConvertLevel(args[1], searchRoot);
-            }
-            else if (args[0] == "-m" || args[0] == "--movables")
-            {
-                if (args.Length < 3) { Console.WriteLine("Usage: TdrExport -m <descriptor.txt> <assets_root>"); return; }
-                ConvertMovablesToObj(args[1], searchRoot);
+                Directory.CreateDirectory(ExportDir);
+                ConvertHieToObj(args[0]);
             }
             else
             {
-                string path = args[0];
-                if (File.Exists(path) || VFS.FileExists(Path.GetFileName(path))) ConvertHieToObj(path);
-                else Console.WriteLine($"Path not found: {path}");
+                PrintUsage();
             }
         }
 
-        static void InvestigateLevel(string levelTxtPath, string searchRoot)
+        static void PrintUsage()
         {
-            Console.WriteLine($"\n=== INVESTIGATION REPORT: {levelTxtPath} ===");
-            byte[] data = LoadFileOnDiskOrPak(searchRoot, levelTxtPath);
+            Console.WriteLine("Carmageddon TDR2000 Universal Tool (Track2Obj & Unpacker)");
+            Console.WriteLine("Usage:");
+            Console.WriteLine("  Full Level Export: TdrExport -l <track_dir_or_txt> <assets_root> [-o <out_dir>]");
+            Console.WriteLine("  Investigate:       TdrExport -i <level.txt> <assets_root>");
+            Console.WriteLine("  Export Movables:   TdrExport -m <descriptor.txt> <assets_root> [-o <out_dir>]");
+            Console.WriteLine("  Unpack Archives:   TdrExport -u <archives_root> <output_dir>");
+            Console.WriteLine(@"\nExample: TdrExport -l ASSETS\Tracks\Hollowood ASSETS -o C:\MyExport");
+        }
+
+        static void InvestigateLevel(string levelPath, string searchRoot)
+        {
+            string levelTxt = ResolveLevelTxt(levelPath, searchRoot);
+            if (levelTxt == null) return;
+
+            Console.WriteLine($"\n=== INVESTIGATION REPORT: {levelTxt} ===");
+            byte[] data = LoadFileOnDiskOrPak(searchRoot, levelTxt);
             if (data == null) { Console.WriteLine("  [!] CRITICAL: Root level file not found!"); return; }
 
             string rawText = Encoding.ASCII.GetString(data);
@@ -99,13 +128,26 @@ namespace TdrExport
 
             Console.WriteLine("\n[3. Texture Validation]");
             int missingTex = 0;
+            var vfsFileNames = new HashSet<string>(VFS.GetFiles().Select(f => Path.GetFileName(f.Name)), StringComparer.OrdinalIgnoreCase);
+            
             foreach (var tex in textures.OrderBy(t => t)) {
-                bool found = VFS.GetFiles().Any(f => f.Name.Contains(tex, StringComparison.OrdinalIgnoreCase));
+                bool found = vfsFileNames.Any(f => f.Contains(tex, StringComparison.OrdinalIgnoreCase));
                 if (!found) missingTex++;
                 Console.WriteLine($"  {(found ? "[+]" : "[!]")} {tex}");
             }
             if (missingTex > 0) Console.WriteLine($"  ! Warning: {missingTex} textures missing from PAKs.");
             Console.WriteLine("\n=== END OF REPORT ===\n");
+        }
+
+        static string ResolveLevelTxt(string path, string root)
+        {
+            if (path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) return path;
+            string trackName = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            string guess = Path.Combine(path, trackName + ".txt");
+            if (File.Exists(guess)) return guess;
+            if (VFS.FileExists(trackName + ".txt")) return trackName + ".txt";
+            Console.WriteLine($"Error: Could not resolve level config for {path}");
+            return null;
         }
 
         static void ValidateHieInfo(string hieName, string root, HashSet<string> textures)
@@ -117,7 +159,7 @@ namespace TdrExport
                 try {
                     var hie = HIE.Load(data, hieName, null, VFS);
                     foreach (var t in hie.Textures) textures.Add(t.Trim('"'));
-                } catch {{}}
+                } catch {}
             }
         }
 
@@ -156,8 +198,11 @@ namespace TdrExport
             }
         }
 
-        static void ConvertLevel(string levelTxtPath, string searchRoot)
+        static void ConvertLevel(string levelPath, string searchRoot)
         {
+            string levelTxtPath = ResolveLevelTxt(levelPath, searchRoot);
+            if (levelTxtPath == null) return;
+
             Console.WriteLine($"\n=== AUTOMATIC LEVEL EXPORT: {Path.GetFileName(levelTxtPath)} ===");
             byte[] levelData = LoadFileOnDiskOrPak(searchRoot, levelTxtPath);
             if (levelData == null) { Console.WriteLine($"Error: Level file not found: {levelTxtPath}"); return; }
@@ -194,7 +239,7 @@ namespace TdrExport
                     }
                 }
             }
-            Console.WriteLine("\n=== LEVEL EXPORT COMPLETE ===\n");
+            Console.WriteLine($"\n=== LEVEL EXPORT COMPLETE ===\nOutput folder: {Path.GetFullPath(ExportDir)}\n");
         }
 
         static void UnpackAll(string archivesRoot, string outputDir)
@@ -221,14 +266,12 @@ namespace TdrExport
             if (string.IsNullOrEmpty(name)) return null;
             if (Path.IsPathRooted(name) && File.Exists(name)) return name;
             string fileName = Path.GetFileName(name);
-            string direct = Path.Combine(root, name); 
+            string direct = Path.Combine(root, name);
             if (File.Exists(direct)) return direct;
-
             try {
                 string found = Directory.EnumerateFiles(root, fileName, SearchOption.AllDirectories).FirstOrDefault();
                 if (found != null) return found;
-            } catch {{}}
-
+            } catch {}
             if (VFS.FileExists(fileName)) return fileName; 
             return null;
         }
@@ -237,64 +280,59 @@ namespace TdrExport
         {
             string path = FindFileOnDiskOrPak(root, name);
             if (path == null) return null;
-            
-            if (File.Exists(path)) return File.ReadAllBytes(path);
-            
+            if (File.Exists(path)) return File.ReadAllBytes(path); 
             return VFS.LoadFile(Path.GetFileName(path));
         }
 
         static void ConvertHieToObj(string hiePath)
         {
-            Console.WriteLine($"Processing HIE: {hiePath}");
+            string fileName = Path.GetFileName(hiePath);
+            Console.WriteLine($"Processing HIE: {fileName}");
             string tempObj = null;
             try {
-                string fileName = Path.GetFileName(hiePath);
                 string baseDir = Path.GetDirectoryName(hiePath);
-                
                 byte[] data = File.Exists(hiePath) ? File.ReadAllBytes(hiePath) : VFS.LoadFile(fileName);
                 if (data == null) return;
-
                 var hie = HIE.Load(data, fileName, baseDir, VFS);
                 if (hie.Root == null) return;
 
-                string uniquePrefix = hiePath.Replace(Path.VolumeSeparatorChar, ' ').Replace(Path.DirectorySeparatorChar, '_').Replace(Path.AltDirectorySeparatorChar, '_').Trim('_');
-                string objPath = Path.ChangeExtension(uniquePrefix, ".obj");
-                string mtlPath = Path.ChangeExtension(objPath, ".mtl");
-                
-                tempObj = objPath + ".tmp";
+                string safeName = fileName.Replace(".hie", "");
+                if (hiePath.Contains("Tracks")) {
+                    var parts = hiePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    var idx = Array.FindIndex(parts, p => p.Equals("Tracks", StringComparison.OrdinalIgnoreCase));
+                    if (idx >= 0 && idx + 1 < parts.Length) safeName = parts[idx+1] + "_" + safeName;
+                }
 
+                string objPath = Path.Combine(ExportDir, safeName + ".obj");
+                string mtlPath = Path.ChangeExtension(objPath, ".mtl");
+                tempObj = objPath + ".tmp";
                 Dictionary<string, MSHS> meshCache = new Dictionary<string, MSHS>();
                 HashSet<string> usedTextures = new HashSet<string>();
                 int vOffset = 1; int vtOffset = 1; int vnOffset = 1;
-
                 using (StreamWriter w = new StreamWriter(tempObj)) {
                     w.WriteLine($"mtllib {Path.GetFileName(mtlPath)}");
                     ProcessNode(hie.Root, Matrix4D.Identity, "Default", hie, baseDir, meshCache, usedTextures, w, ref vOffset, ref vtOffset, ref vnOffset);
                 }
-                
-                WriteMtlFile(mtlPath, usedTextures, baseDir ?? ".");
-                
+                WriteMtlFile(mtlPath, usedTextures, ExportDir);
                 if (File.Exists(objPath)) File.Delete(objPath);
                 File.Move(tempObj, objPath);
-
-                Console.WriteLine($"  Exported: {objPath}");
+                Console.WriteLine($"  [OK] Saved to: {objPath}");
             } catch (Exception ex) { 
                 if (tempObj != null && File.Exists(tempObj)) File.Delete(tempObj);
-                Console.WriteLine($"  Error: {ex.Message}"); 
+                Console.WriteLine($"  [!] Error: {ex.Message}"); 
             }
         }
 
         static void ConvertMovablesToObj(string descriptorPath, string searchRoot)
         {
-            Console.WriteLine($"Processing Movables: {descriptorPath}");
+            string fileName = Path.GetFileName(descriptorPath);
+            Console.WriteLine($"Processing Movables: {fileName}");
             string tempObj = null;
             try {
-                byte[] data = File.Exists(descriptorPath) ? File.ReadAllBytes(descriptorPath) : VFS.LoadFile(Path.GetFileName(descriptorPath));
+                byte[] data = File.Exists(descriptorPath) ? File.ReadAllBytes(descriptorPath) : VFS.LoadFile(fileName);
                 if (data == null) return;
                 var lines = Encoding.ASCII.GetString(data).Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-                string baseDir = Path.GetDirectoryName(descriptorPath);
-                string fileName = Path.GetFileName(descriptorPath);
-                string objPath = Path.Combine(baseDir ?? ".", Path.GetFileNameWithoutExtension(fileName) + "_movables.obj");
+                string objPath = Path.Combine(ExportDir, Path.GetFileNameWithoutExtension(fileName) + "_movables.obj");
                 string mtlPath = Path.ChangeExtension(objPath, ".mtl");
                 tempObj = objPath + ".tmp";
                 Dictionary<string, HIE> hieCache = new Dictionary<string, HIE>();
@@ -329,24 +367,26 @@ namespace TdrExport
                     }
                     Console.WriteLine($"  Exported {count} instances.");
                 }
-                WriteMtlFile(mtlPath, usedTextures, searchRoot);
+                WriteMtlFile(mtlPath, usedTextures, ExportDir);
                 if (File.Exists(objPath)) File.Delete(objPath);
                 File.Move(tempObj, objPath);
+                Console.WriteLine($"  [OK] Saved to: {objPath}");
             } catch (Exception ex) { 
                 if (tempObj != null && File.Exists(tempObj)) File.Delete(tempObj);
-                Console.WriteLine($"  Error in Movables: {ex.Message}"); 
-            }
+                Console.WriteLine($"  [!] Error: {ex.Message}"); 
+            } 
         }
 
         static void WriteMtlFile(string mtlPath, HashSet<string> usedTextures, string searchRoot)
         {
             using (StreamWriter mtl = new StreamWriter(mtlPath)) {
                 mtl.WriteLine("newmtl Default\nKd 0.8 0.8 0.8");
+                var vfsFiles = VFS.GetFiles();
                 foreach(var texName in usedTextures) {
                     if (string.IsNullOrWhiteSpace(texName) || texName == "Default") continue;
                     mtl.WriteLine($"\nnewmtl {texName}\nKd 1.0 1.0 1.0");
                     string texFile = texName + ".tga";
-                    var best = VFS.GetFiles().Where(f => f.Name.Contains(texName, StringComparison.OrdinalIgnoreCase) && (f.Name.EndsWith(".tga") || f.Name.EndsWith(".png")))
+                    var best = vfsFiles.Where(f => f.Name.Contains(texName, StringComparison.OrdinalIgnoreCase) && (f.Name.EndsWith(".tga") || f.Name.EndsWith(".png")))
                         .OrderByDescending(f => f.Name.Contains("_32")).ThenByDescending(f => f.Name.Length).FirstOrDefault();
                     if (best != null) texFile = Path.GetFileName(best.Name);
                     mtl.WriteLine($"map_Kd {texFile}\nmap_d {texFile}");
@@ -360,10 +400,9 @@ namespace TdrExport
             Matrix4D globalTransform = (node.Transform ?? Matrix4D.Identity) * parentTransform;
             if (node.Type == TDRNode.NodeType.Texture && node.Index >= 0 && node.Index < hie.Textures.Count)
                 currentTexture = hie.Textures[node.Index].Trim('"');
-
             if (node.Type == TDRNode.NodeType.Mesh) {
                 string meshName = null; int subMeshIndex = -1;
-                if (hie.Meshes.Count == 1) { meshName = hie.Meshes[0]; subMeshIndex = node.Index; } 
+                if (hie.Meshes.Count == 1) { meshName = hie.Meshes[0]; subMeshIndex = node.Index; }
                 else if (node.Index >= 0 && node.Index < hie.Meshes.Count) { meshName = hie.Meshes[node.Index]; }
                 if (meshName != null) {
                     if (!meshCache.TryGetValue(meshName, out MSHS mshs)) {
