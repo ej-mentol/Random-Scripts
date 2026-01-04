@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 
 using TdrExport.Helpers;
 
@@ -44,7 +44,7 @@ namespace TdrExport.TDR2000.Formats
 
         public List<TDRNode> Nodes { get; set; } = new List<TDRNode>();
 
-        public TDRNode Root => Nodes[0];
+        public TDRNode Root => Nodes.Count > 0 ? Nodes[0] : null;
 
         public static HIE Load(string path)
         {
