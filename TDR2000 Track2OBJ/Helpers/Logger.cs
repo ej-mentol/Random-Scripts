@@ -16,7 +16,7 @@
 
         public static bool AllowLog { get; set; } = true;
 
-        public static string LogName { get; set; } = "Flummery.log";
+        public static string LogName { get; set; } = "TdrExport.log";
 
         public static void ResetLog()
         {
@@ -59,4 +59,5 @@
             }
         }
     }
+
 }
