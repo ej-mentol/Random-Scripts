@@ -247,7 +247,11 @@ namespace TdrExport.TDR2000.Formats
                         if (lines[i + 1].ToLower() == "// type  index  child  sibling") { i++; }
                         for (int j = 0; j < hie.NodeCount; j++)
                         {
-                            hie.Nodes.Add(new TDRNode((h.Definitions.ContainsKey(j) ? h.Definitions[j] : "DEFAULT"), j, lines[++i]));
+                            var node = new TDRNode("DEFAULT", j, lines[++i]);
+                            if (h.Definitions.ContainsKey(node.ID)) {
+                                node.Name = h.Definitions[node.ID];
+                            }
+                            hie.Nodes.Add(node);
                         }
                         break;
 
