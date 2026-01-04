@@ -1,62 +1,43 @@
-# Track2Obj: Carmageddon: TDR 2000 (created by me and AI)
+# Track2Obj: Carmageddon TDR 2000 Universal Tool
 
-A standalone CLI utility for Carmageddon TDR2000 asset management. It allows you to investigate level structures, unpack game archives, and export complete game levels into Wavefront OBJ + MTL format.
+A high-performance standalone CLI utility for **Carmageddon TDR2000** asset management. It allows you to investigate level structures, unpack game archives, and export complete game levels into **Wavefront OBJ + MTL** format.
 
 ## Features
-- **Smart Archive Access:** Directly reads assets from .pak archives. Manual unpacking is not required.
-- **Auto-Discovery:** Automatically locates the game's ASSETS folder if the tool is near the game files.
-- **Recursive Tracing:** Follows chains of descriptor files (TXT -> TXT -> HIE) to find all level components.
-- **Level Export (-l):** Exports all layers (geometry, breakables, props, water, sky) in one go with unique filenames.
-- **Auto Texture Extraction:** Automatically extracts required .tga files from PAKs to the output folder. Use -nomat to skip this.
-- **Safety:** Atomic writes using .tmp files and crash cleanup.
+- **Virtual File System (VFS):** Transparently reads assets directly from `.pak` archives using `.dir` indices. You can export a level pointing only to the original game's `ASSETS` folder.
+- **Recursive Dependency Tracing:** Automatically follows chains of descriptors (TXT -> TXT -> HIE) to find every piece of the level.
+- **Smart Level Export (`-l`):** Exports all layers (Static geometry, Breakables, Props, Water, Sky) in one pass with unique naming to avoid file conflicts.
+- **Automatic World Positioning:** Processes `MOVABLE_OBJECTS` to place thousands of props (cactuses, cars, etc.) at their exact game coordinates.
+- **High-Quality Asset Selection:** Prioritizes 32-bit textures (`_32.tga`) and highest available resolutions.
+- **Blender Ready:** Automatic V-axis flipping for UVs and transparency support (`map_d` in MTL).
+- **Atomic Operations:** Safe writing using temporary files and crash cleanup.
 
 ---
 
 ## Usage
 
-### Level Export (-l)
-Exports the entire map. You can provide a track folder name (like Hollowood) or a path to a specific level txt.
+### 1. Investigation & Scouting (`-i`)
+Scans a level and reports all dependencies, identifying what's found and what's missing.
+**Command:** `TdrExport -i <level.txt> <game_assets_root>`
+*Note: <level.txt> can be just a filename; the tool will find it inside the PAKs.*
 
-**Syntax:**
-TdrExport -l <track_name_or_dir> [assets_root] [-o <out_dir>] [-nomat]
+### 2. Full Level Export (`-l`)
+The "one-click" mode to get the whole map.
+**Command:** `TdrExport -l <level.txt> <game_assets_root>`
 
-**Examples:**
-- TdrExport -l Hollowood (Uses local ASSETS folder, saves to EXPORT/)
-- TdrExport -l 1920s "C:\Games\TDR2000\ASSETS" -o C:\MyScene
-- TdrExport -l Tracks\PoliceState -nomat (Export geometry only)
+### 3. Archive Unpacker (`-u`)
+Extracts all files from all PAKs in a directory.
+**Command:** `TdrExport -u <archives_folder> <output_folder>`
 
-### Investigation (-i)
-Analyzes level dependencies and checks for missing assets. Traces all descriptors and validates textures against the archives.
-
-**Syntax:**
-TdrExport -i <level_name_or_txt> [assets_root]
-
-### Movable Objects (-m)
-Exports and positions dynamic props (trees, street lights, cars) using coordinates from a descriptor file.
-
-**Syntax:**
-TdrExport -m <descriptor_txt> [assets_root] [-o <out_dir>] [-nomat]
-
-### Archive Unpacker (-u)
-Extracts everything from all .pak archives in a folder while keeping the directory structure.
-
-**Syntax:**
-TdrExport -u <archives_root> <output_dir>
-
-### Single HIE Export
-Converts one .hie file to OBJ.
-
-**Syntax:**
-TdrExport <file.hie> [assets_root]
+### 4. Single File Export
+**Command:** `TdrExport <file.hie> [game_assets_root]`
 
 ---
 
 ## Technical Details
-- **Target:** .NET 9.0 (Windows)
-- **Output:** Wavefront OBJ, MTL, TGA.
-- **Assets Root:** Optional if the tool is near the game folder.
-- **Transparency:** Supports map_d in MTL for 32-bit textures.
+- **Target Platform:** .NET 9.0 (Windows)
+- **Output Formats:** Wavefront OBJ, MTL.
+- **Texture Support:** Links directly to `.tga` files. Supports alpha transparency for windows and foliage.
 
 ## Credits
-- **Archive Engine:** Custom high-performance implementation by the project owner (Trie-indexing and zIG/RAW decompression).
-- **Format Parsers:** Based on logic from the ToxicRagers (https://github.com/MaxxWyndham/ToxicRagers) project, refactored for .NET 9.
+- **Archive Engine (`.PAK` / `.DIR`):** Custom high-performance implementation by the project owner, featuring full Trie-index support and zIG/RAW block decompression.
+- **Format Parsers (`.HIE`, `.MSHS`, `.H`):** Based on the logic from the [ToxicRagers](https://github.com/MaxxWyndham/ToxicRagers) project, significantly refactored and modernized.
