@@ -148,7 +148,13 @@ namespace TdrExport
                 foreach (var t in textures) {
                     if (string.IsNullOrWhiteSpace(t) || t == "Default") continue;
                     mtl.WriteLine($"\nnewmtl {t}\nKd 1.0 1.0 1.0");
-                    var best = vfs.Where(f => { string n = Path.GetFileNameWithoutExtension(f.Name); return (n.Equals(t, StringComparison.OrdinalIgnoreCase) || n.StartsWith(t + "_", StringComparison.OrdinalIgnoreCase)) && f.Name.EndsWith(".tga"); }).OrderByDescending(f => f.Name.Contains("_32")).FirstOrDefault();
+                    var best = vfs.Where(f => {
+                            string n = Path.GetFileNameWithoutExtension(f.Name);
+                            return n.StartsWith(t, StringComparison.OrdinalIgnoreCase) && (f.Name.EndsWith(".tga") || f.Name.EndsWith(".png"));
+                        })
+                        .OrderByDescending(f => f.Name.Contains("_32")) // Quality first
+                        .ThenBy(f => f.Name.Length) // SHORTEST name first (closest match)
+                        .FirstOrDefault();
                     if (best != null) { string tName = Path.GetFileName(best.Name); if (!File.Exists(Path.Combine(outDir, tName))) { byte[] d = VFS.LoadFile(best.Name); if (d != null) File.WriteAllBytes(Path.Combine(outDir, tName), d); } mtl.WriteLine($"map_Kd {tName}\nmap_d {tName}"); }
                 }
             }
