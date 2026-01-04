@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -20,7 +20,7 @@ namespace TdrExport.TDR2000.Formats
         {
             Logger.LogToFile(Logger.LogLevel.Info, "{0}", name);
             MSHS mshs = new MSHS();
-            bool singleMesh = !name.EndsWith("s", StringComparison.OrdinalIgnoreCase);
+            bool singleMesh = name.EndsWith(".msh", StringComparison.OrdinalIgnoreCase);
 
             using (BinaryReader br = new BinaryReader(new MemoryStream(data)))
             {
