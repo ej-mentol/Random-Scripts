@@ -29,7 +29,8 @@ namespace TdrExport.TDR2000.Formats
             {
                 if (lines[i].StartsWith("#define"))
                 {
-                    string[] parts = lines[i].Split(" ".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+                    // Split by any whitespace (space or tab)
+                    string[] parts = lines[i].Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
 
                     if (parts.Length >= 3)
                     {
