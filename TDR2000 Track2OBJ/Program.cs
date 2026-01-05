@@ -14,15 +14,18 @@ namespace TdrExport
         static PakManager VFS = new PakManager();
         static string ExportDir = "EXPORT";
         static bool NoMaterials = false;
+        static bool UseLocalCoords = false;
 
         static void Main(string[] args)
         {
             if (args.Length == 0) { PrintUsage(); return; }
             if (args.Any(a => a.Equals("-nomat", StringComparison.OrdinalIgnoreCase))) NoMaterials = true;
+            if (args.Any(a => a.Equals("-local", StringComparison.OrdinalIgnoreCase))) UseLocalCoords = true;
+            
             for (int i = 0; i < args.Length; i++) if ((args[i].Equals("-o") || args[i].Equals("--out")) && i + 1 < args.Length) ExportDir = args[++i];
             if (args[0] == "-u" || args[0] == "--unpack") { if (args.Length < 3) { Console.WriteLine("Usage: TdrExport -u <archives_root> <output_dir>"); return; } UnpackAll(args[1], args[2]); return; }
             string assetsRoot = args.Length >= 3 ? args[2] : (args.Length == 2 ? args[1] : ".");
-            if (assetsRoot.Equals("-nomat", StringComparison.OrdinalIgnoreCase) || assetsRoot.StartsWith("-o")) assetsRoot = ".";
+            if (assetsRoot.Equals("-nomat", StringComparison.OrdinalIgnoreCase) || assetsRoot.StartsWith("-o") || assetsRoot.Equals("-local", StringComparison.OrdinalIgnoreCase)) assetsRoot = ".";
             if (Directory.Exists(assetsRoot)) VFS.IndexDirectory(assetsRoot);
             string mode = args[0].ToLower(); string target = args.Length > 1 ? args[1] : args[0];
             if (mode == "-i" || mode == "--info") InvestigateLevel(target, assetsRoot);
@@ -31,12 +34,12 @@ namespace TdrExport
             else { Directory.CreateDirectory(ExportDir); ConvertHieToObj(target); }
         }
 
-        static void PrintUsage() { Console.WriteLine("TdrExport: Carmageddon TDR2000 Asset Tool\n\nUsage:\n  TdrExport -l <track_name> <assets_path> [-o <out>] [-nomat]\n  TdrExport -i <track_name> <assets_path>\n  TdrExport -u <assets_path> <output_folder>"); }
+        static void PrintUsage() { Console.WriteLine("TdrExport: Carmageddon TDR2000 Asset Tool\n\nUsage:\n  TdrExport -l <track_name> <assets_path> [-o <out>] [-nomat] [-local]\n  TdrExport -i <track_name> <assets_path>\n  TdrExport -u <assets_path> <output_folder>\n\nOptions:\n  -local   Reset mesh translation to 0,0,0 (save WorldPos in metadata)"); }
         static string ResolveLevelTxt(string input) { if (input.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) return input; var vfs = VFS.GetFiles(); var match = vfs.FirstOrDefault(f => f.Name.ToLower().EndsWith($"tracks\\{input.ToLower()}\\{input.ToLower()}.txt") || f.Name.ToLower().EndsWith($"tracks/{input.ToLower()}/{input.ToLower()}.txt")); if (match == null) match = vfs.FirstOrDefault(f => f.Name.ToLower().EndsWith($"{input.ToLower()}.txt")); return match != null ? match.Name : input + ".txt"; }
 
         static void ConvertLevel(string trackName, string root)
         {
-            string levelTxt = ResolveLevelTxt(trackName); Console.WriteLine($"\n=== EXPORTING LEVEL: {levelTxt} ===");
+            string levelTxt = ResolveLevelTxt(trackName); Console.WriteLine(string.Format("\n=== EXPORTING LEVEL: {0} ===", levelTxt));
             byte[] data = LoadFileOnDiskOrPak(root, levelTxt); if (data == null) return;
             var lines = Encoding.ASCII.GetString(data).Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase); HashSet<string> textures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -62,7 +65,7 @@ namespace TdrExport
 
         static void InvestigateLevel(string trackName, string root)
         {
-            string levelTxt = ResolveLevelTxt(trackName); Console.WriteLine($"\n=== INVESTIGATION: {levelTxt} ===");
+            string levelTxt = ResolveLevelTxt(trackName); Console.WriteLine(string.Format("\n=== INVESTIGATION: {0} ===", levelTxt));
             byte[] data = LoadFileOnDiskOrPak(root, levelTxt); if (data == null) return;
             var lines = Encoding.ASCII.GetString(data).Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase); var textures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -76,7 +79,7 @@ namespace TdrExport
             Console.WriteLine("\n[Texture Check]"); var vfsNames = new HashSet<string>(VFS.GetFiles().Select(f => Path.GetFileName(f.Name)), StringComparer.OrdinalIgnoreCase);
             foreach (var tex in textures.OrderBy(t => t)) {
                 bool found = vfsNames.Any(f => { string n = Path.GetFileNameWithoutExtension(f); return (n.Equals(tex, StringComparison.OrdinalIgnoreCase) || n.StartsWith(tex + "_", StringComparison.OrdinalIgnoreCase)); });
-                Console.WriteLine($"  {(found ? "[+]" : "[!]")} {tex}");
+                Console.WriteLine(string.Format("  {0} {1}", (found ? "[+]" : "[!]"), tex));
             }
         }
 
@@ -84,9 +87,9 @@ namespace TdrExport
         {
             byte[] data = LoadFileOnDiskOrPak(root, hieName);
             if (data != null) {
-                Console.WriteLine($"  [+] {hieName}");
+                Console.WriteLine(string.Format("  [+] {0}", hieName));
                 try { var hie = HIE.Load(data, hieName, null, VFS); foreach (var t in hie.Textures) textures.Add(t.Trim('"')); } catch {}
-            } else Console.WriteLine($"  [?] {hieName} (Missing)");
+            } else Console.WriteLine(string.Format("  [?] {0} (Missing)", hieName));
         }
 
         static void ParseDescriptorRecursive(string descName, string root, HashSet<string> texs, HashSet<string> visited, bool export, ref int v, ref int vt, ref int vn)
@@ -116,8 +119,8 @@ namespace TdrExport
                 string outName = fileName.Replace(".hie", "");
                 if (hiePath.Contains("Tracks")) { var parts = hiePath.Split('\\', '/'); var idx = Array.FindIndex(parts, p => p.Equals("Tracks", StringComparison.OrdinalIgnoreCase)); if (idx >= 0 && idx + 1 < parts.Length) outName = parts[idx+1] + "_" + outName; }
                 string objPath = Path.Combine(ExportDir, outName + ".obj"); string mtlPath = Path.ChangeExtension(objPath, ".mtl"); tempObj = objPath + ".tmp";
-                using (StreamWriter w = new StreamWriter(tempObj)) { w.WriteLine($"mtllib {Path.GetFileName(mtlPath)}"); ProcessNode(hie.Root, Matrix4D.Identity, "Default", hie, new Dictionary<string, MSHS>(), textures, w, ref v, ref vt, ref vn); }
-                WriteMtlFile(mtlPath, textures); if (File.Exists(objPath)) File.Delete(objPath); File.Move(tempObj, objPath); Console.WriteLine($"  [OK] {outName}");
+                using (StreamWriter w = new StreamWriter(tempObj)) { w.WriteLine(string.Format("mtllib {0}", Path.GetFileName(mtlPath))); ProcessNode(hie.Root, Matrix4D.Identity, "Default", hie, new Dictionary<string, MSHS>(), textures, w, ref v, ref vt, ref vn); }
+                WriteMtlFile(mtlPath, textures); if (File.Exists(objPath)) File.Delete(objPath); File.Move(tempObj, objPath); Console.WriteLine(string.Format("  [OK] {0}", outName));
             } catch (Exception) { if (tempObj != null && File.Exists(tempObj)) File.Delete(tempObj); }
         }
 
@@ -128,15 +131,31 @@ namespace TdrExport
             string objPath = Path.Combine(ExportDir, Path.GetFileNameWithoutExtension(descPath) + "_movables.obj"); string mtlPath = Path.ChangeExtension(objPath, ".mtl"); string tempObj = objPath + ".tmp";
             int v=1, vt=1, vn=1; HashSet<string> textures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (StreamWriter w = new StreamWriter(tempObj)) {
-                w.WriteLine($"mtllib {Path.GetFileName(mtlPath)}");
+                w.WriteLine(string.Format("mtllib {0}", Path.GetFileName(mtlPath)));
                 foreach (var line in lines) {
                     var p = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries); if (p.Length < 8) continue; string name = p[0].Trim('"');
                     Matrix4D mat = Matrix4D.CreateFromQuaternion(new Quaternion(float.Parse(p[4], CultureInfo.InvariantCulture), float.Parse(p[5], CultureInfo.InvariantCulture), float.Parse(p[6], CultureInfo.InvariantCulture), float.Parse(p[7], CultureInfo.InvariantCulture)));
-                    mat.M41 = float.Parse(p[1], CultureInfo.InvariantCulture); mat.M42 = float.Parse(p[2], CultureInfo.InvariantCulture); mat.M43 = float.Parse(p[3], CultureInfo.InvariantCulture);
-                    byte[] hData = VFS.LoadFile(name + ".hie"); if (hData != null) { var hie = HIE.Load(hData, name + ".hie", null, VFS); if (hie.Root != null) ProcessNode(hie.Root, mat, "Default", hie, new Dictionary<string, MSHS>(), textures, w, ref v, ref vt, ref vn); }
+                    
+                    if (!UseLocalCoords) {
+                        mat.M41 = float.Parse(p[1], CultureInfo.InvariantCulture); 
+                        mat.M42 = float.Parse(p[2], CultureInfo.InvariantCulture); 
+                        mat.M43 = float.Parse(p[3], CultureInfo.InvariantCulture);
+                    } else {
+                        float x = float.Parse(p[1], CultureInfo.InvariantCulture);
+                        float y = float.Parse(p[2], CultureInfo.InvariantCulture);
+                        float z = float.Parse(p[3], CultureInfo.InvariantCulture);
+                        w.WriteLine(string.Format("o {0}", name));
+                        w.WriteLine(string.Format("# WorldPos {0} {1} {2}", F(x), F(y), F(z)));
+                    }
+
+                    byte[] hData = VFS.LoadFile(name + ".hie"); 
+                    if (hData != null) { 
+                        var hie = HIE.Load(hData, name + ".hie", null, VFS); 
+                        if (hie.Root != null) ProcessNode(hie.Root, mat, "Default", hie, new Dictionary<string, MSHS>(), textures, w, ref v, ref vt, ref vn); 
+                    }
                 }
             }
-            WriteMtlFile(mtlPath, textures); if (File.Exists(objPath)) File.Delete(objPath); File.Move(tempObj, objPath); Console.WriteLine($"  [OK] Movables -> {objPath}");
+            WriteMtlFile(mtlPath, textures); if (File.Exists(objPath)) File.Delete(objPath); File.Move(tempObj, objPath); Console.WriteLine(string.Format("  [OK] Movables -> {0}", objPath));
         }
 
         static void WriteMtlFile(string mtlPath, HashSet<string> textures)
@@ -147,32 +166,41 @@ namespace TdrExport
                 var vfs = VFS.GetFiles();
                 foreach (var t in textures) {
                     if (string.IsNullOrWhiteSpace(t) || t == "Default") continue;
-                    mtl.WriteLine($"\nnewmtl {t}\nKd 1.0 1.0 1.0");
+                    mtl.WriteLine(string.Format("\nnewmtl {0}\nKd 1.0 1.0 1.0", t));
                     var best = vfs.Where(f => {
                             string n = Path.GetFileNameWithoutExtension(f.Name);
                             return n.StartsWith(t, StringComparison.OrdinalIgnoreCase) && (f.Name.EndsWith(".tga") || f.Name.EndsWith(".png"));
                         })
-                        .OrderByDescending(f => f.Name.Contains("_32")) // Quality first
-                        .ThenBy(f => f.Name.Length) // SHORTEST name first (closest match)
+                        .OrderByDescending(f => f.Name.Contains("_32"))
+                        .ThenBy(f => f.Name.Length)
                         .FirstOrDefault();
-                    if (best != null) { string tName = Path.GetFileName(best.Name); if (!File.Exists(Path.Combine(outDir, tName))) { byte[] d = VFS.LoadFile(best.Name); if (d != null) File.WriteAllBytes(Path.Combine(outDir, tName), d); } mtl.WriteLine($"map_Kd {tName}\nmap_d {tName}"); }
+                    if (best != null) { string tName = Path.GetFileName(best.Name); if (!File.Exists(Path.Combine(outDir, tName))) { byte[] d = VFS.LoadFile(best.Name); if (d != null) File.WriteAllBytes(Path.Combine(outDir, tName), d); } mtl.WriteLine(string.Format("map_Kd {0}\nmap_d {0}", tName)); }
                 }
             }
         }
 
         static void ProcessNode(TDRNode n, Matrix4D p, string t, HIE h, Dictionary<string, MSHS> c, HashSet<string> ts, StreamWriter w, ref int v, ref int vt, ref int vn)
         {
-            if (n == null) return; Matrix4D m = (n.Transform ?? Matrix4D.Identity) * p;
+            if (n == null) return; 
+            Matrix4D m = (n.Transform ?? Matrix4D.Identity) * p;
             if (n.Type == TDRNode.NodeType.Texture && n.Index >= 0 && n.Index < h.Textures.Count) t = h.Textures[n.Index].Trim('"');
             if (n.Type == TDRNode.NodeType.Mesh) {
                 string mName = h.Meshes.Count == 1 ? h.Meshes[0] : (n.Index < h.Meshes.Count ? h.Meshes[n.Index] : null);
                 if (mName != null) {
                     if (!c.TryGetValue(mName, out MSHS msh)) { byte[] b = VFS.LoadFile(mName); if (b != null) { msh = MSHS.Load(b, mName); c[mName] = msh; } }
                     if (msh != null) {
-                        w.WriteLine($"o {n.Name}_{n.ID}\nusemtl {t}"); ts.Add(t);
+                        w.WriteLine(string.Format("o {0}_{1}", n.Name, n.ID));
+                        Matrix4D drawMatrix = m;
+                        if (UseLocalCoords) {
+                            w.WriteLine(string.Format("# WorldPos {0} {1} {2}", F(m.M41), F(m.M42), F(m.M43)));
+                            Matrix4D localM = m.Clone();
+                            localM.M41 = 0; localM.M42 = 0; localM.M43 = 0;
+                            drawMatrix = localM;
+                        }
+                        w.WriteLine(string.Format("usemtl {0}", t)); ts.Add(t);
                         int sub = h.Meshes.Count == 1 ? n.Index : -1;
-                        if (sub >= 0 && sub < msh.Meshes.Count) WriteSubMesh(msh.Meshes[sub], m, w, ref v, ref vt, ref vn);
-                        else foreach (var sm in msh.Meshes) WriteSubMesh(sm, m, w, ref v, ref vt, ref vn);
+                        if (sub >= 0 && sub < msh.Meshes.Count) WriteSubMesh(msh.Meshes[sub], drawMatrix, w, ref v, ref vt, ref vn);
+                        else foreach (var sm in msh.Meshes) WriteSubMesh(sm, drawMatrix, w, ref v, ref vt, ref vn);
                     }
                 }
             }
@@ -185,29 +213,41 @@ namespace TdrExport
                 foreach (var f in m.Faces) {
                     for (int i = 0; i < 3; i++) {
                         var vert = f.Vertices[i]; Vector3 pos = TransformPoint(m.Positions[vert.PositionIndex], t); Vector3 n = TransformVector(vert.Normal, t);
-                        w.WriteLine($"v {F(pos.X)} {F(pos.Y)} {F(pos.Z)}\nvt {F(vert.UV.X)} {F(1.0f - vert.UV.Y)}\nvn {F(n.X)} {F(n.Y)} {F(n.Z)}");
+                        w.WriteLine(string.Format("v {0} {1} {2}\nvt {3} {4}\nvn {5} {6} {7}", F(pos.X), F(pos.Y), F(pos.Z), F(vert.UV.X), F(1.0f - vert.UV.Y), F(n.X), F(n.Y), F(n.Z)));
                     }
-                    w.WriteLine($"f {v}/{vt}/{vn} {v+1}/{vt+1}/{vn+1} {v+2}/{vt+2}/{vn+2}"); v += 3; vt += 3; vn += 3;
+                    w.WriteLine(string.Format("f {0}/{1}/{2} {3}/{4}/{5} {6}/{7}/{8}", v, vt, vn, v+1, vt+1, vn+1, v+2, vt+2, vn+2)); v += 3; vt += 3; vn += 3;
                 }
             } else if (m.Mode == TDRMesh.MSHMode.Tri) {
                 int s = v; foreach(var vert in m.Vertices) {
                     Vector3 p = TransformPoint(vert.Position, t); Vector3 n = TransformVector(vert.Normal, t);
-                    w.WriteLine($"v {F(p.X)} {F(p.Y)} {F(p.Z)}\nvt {F(vert.UV.X)} {F(1.0f - vert.UV.Y)}\nvn {F(n.X)} {F(n.Y)} {F(n.Z)}"); v++; vt++; vn++;
+                    w.WriteLine(string.Format("v {0} {1} {2}\nvt {3} {4}\nvn {5} {6} {7}", F(p.X), F(p.Y), F(p.Z), F(vert.UV.X), F(1.0f - vert.UV.Y), F(n.X), F(n.Y), F(n.Z))); v++; vt++; vn++;
                 }
-                foreach(var f in m.Faces) w.WriteLine($"f {s+f.V1}/{s+f.V1}/{s+f.V1} {s+f.V2}/{s+f.V2}/{s+f.V2} {s+f.V3}/{s+f.V3}/{s+f.V3}");
+                foreach(var f in m.Faces) w.WriteLine(string.Format("f {0}/{0}/{0} {1}/{1}/{1} {2}/{2}/{2}", s+f.V1, s+f.V2, s+f.V3));
             } else {
                 foreach(var f in m.Faces) {
-                    string l = "f"; foreach(var vert in f.Vertices) {
+                    string line = "f"; foreach(var vert in f.Vertices) {
                         Vector3 p = TransformPoint(vert.Position, t); Vector3 n = TransformVector(vert.Normal, t);
-                        w.WriteLine($"v {F(p.X)} {F(p.Y)} {F(p.Z)}\nvt {F(vert.UV.X)} {F(1.0f - vert.UV.Y)}\nvn {F(n.X)} {F(n.Y)} {F(n.Z)}");
-                        l += $" {v}/{vt}/{vn}"; v++; vt++; vn++;
+                        w.WriteLine(string.Format("v {0} {1} {2}\nvt {3} {4}\nvn {5} {6} {7}", F(p.X), F(p.Y), F(p.Z), F(vert.UV.X), F(1.0f - vert.UV.Y), F(n.X), F(n.Y), F(n.Z)));
+                        line += string.Format(" {0}/{1}/{2}", v, vt, vn); v++; vt++; vn++;
                     }
-                    w.WriteLine(l);
+                    w.WriteLine(line);
                 }
             }
         }
 
-        static void UnpackAll(string r, string o) { VFS.IndexDirectory(r); foreach (var e in VFS.GetFiles()) { byte[] d = VFS.LoadFile(e.Name); if (d != null) { string p = Path.Combine(o, e.Name.Replace('/', '\\')); Directory.CreateDirectory(Path.GetDirectoryName(p)); File.WriteAllBytes(p, d); } } }
+        static void UnpackAll(string r, string o) 
+        { 
+            VFS.IndexDirectory(r); 
+            foreach (var e in VFS.GetFiles()) { 
+                byte[] d = VFS.LoadFile(e.Name); 
+                if (d != null) { 
+                    string p = Path.Combine(o, e.Name.Replace('/', '\\')); 
+                    Directory.CreateDirectory(Path.GetDirectoryName(p)); 
+                    File.WriteAllBytes(p, d); 
+                } 
+            } 
+        } 
+        
         static byte[] LoadFileOnDiskOrPak(string r, string n) { string p = FindFileOnDiskOrPak(r, n); return p == null ? null : (File.Exists(p) ? File.ReadAllBytes(p) : VFS.LoadFile(Path.GetFileName(n))); }
         static string FindFileOnDiskOrPak(string r, string n) { string f = Path.GetFileName(n); string d = Path.Combine(r, n); if (File.Exists(d)) return d; try { string s = Directory.EnumerateFiles(r, f, SearchOption.AllDirectories).FirstOrDefault(); if (s != null) return s; } catch {} return VFS.FileExists(f) ? f : null; }
         static Vector3 TransformPoint(Vector3 p, Matrix4D m) => new Vector3(p.X*m.M11+p.Y*m.M21+p.Z*m.M31+m.M41, p.X*m.M12+p.Y*m.M22+p.Z*m.M32+m.M42, p.X*m.M13+p.Y*m.M23+p.Z*m.M33+m.M43);
